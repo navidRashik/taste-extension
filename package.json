@@ -1,0 +1,17 @@
+{
+  "name": "taste-extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Taste — a harness-layer preference learner for OMP (PR1: contract + fail-open scaffold).",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
