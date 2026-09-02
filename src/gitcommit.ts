@@ -252,3 +252,38 @@ export function commitArtefact(
   }
   return args;
 }
+
+/**
+ * Commit the REMOVAL of one promoted artefact. A project-scope forget deletes
+ * the artefact from the taste subtree, which would leave the subtree dirty and
+ * make every later promotion refuse on the dirty-subtree condition; committing
+ * the deletion keeps the subtree clean so the promotion loop stays live. The
+ * caller deletes the file first; this records that deletion. The pathspec is
+ * validated inside the taste subtree and the argv runs through the same guard
+ * as a promotion commit, so a removal can no more smuggle a staging, force,
+ * amend, push, or verification-skipping argument than a promotion can. This
+ * does not run the promotion preflight, because a forget deliberately dirties
+ * the subtree with the very deletion it is about to commit.
+ */
+export function commitRemoval(
+  plan: CommitPlan,
+  cwd: string,
+  artefactPath: string,
+  ledgerId: string,
+  runner: GitRunner,
+): string[] {
+  const target = resolve(artefactPath);
+  if (!isInside(plan.tasteRoot, target)) {
+    throw new Error(`taste git: pathspec escapes the taste subtree: ${target}`);
+  }
+  const message = `taste: forget promotion ${ledgerId}`;
+  if (ATTRIBUTION_RX.test(message)) {
+    throw new Error("taste git: commit message carries an attribution token");
+  }
+  const args = ["commit", "--only", target, "-m", message];
+  const res = git(runner, cwd, args);
+  if (res.status !== 0) {
+    throw new Error(`taste git: removal commit refused with status ${res.status}`);
+  }
+  return args;
+}

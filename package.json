@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Taste — a harness-layer preference learner for OMP (PR1: contract + fail-open scaffold).",
+  "description": "Taste — a harness-layer preference learner for OMP: infers durable preferences from accept/reject/edit signals and auto-promotes implementer-class ones into managed skills, memory, guard rules, and approvals. Default-off, fail-open.",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
