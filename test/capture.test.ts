@@ -33,6 +33,8 @@ function fakePiWithLedger(): { pi: ExtensionAPI; handlers: Handlers; ledger: Rec
     appendEntry: (customType: string, data: unknown) => {
       ledger.push({ type: customType, data });
     },
+    registerCommand: () => {},
+    sendMessage: () => {},
   } as unknown as ExtensionAPI;
   return { pi, handlers, ledger };
 }

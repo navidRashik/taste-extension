@@ -20,6 +20,8 @@ function fakePi(): { pi: ExtensionAPI; handlers: Captured } {
     on: (event: string, handler: (event: unknown, ctx: unknown) => unknown) => {
       handlers.set(event, handler);
     },
+    registerCommand: () => {},
+    sendMessage: () => {},
   } as unknown as ExtensionAPI;
   return { pi, handlers };
 }

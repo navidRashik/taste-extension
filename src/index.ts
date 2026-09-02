@@ -32,6 +32,8 @@ import {
 import { ensureLoaded, flushAccumulator } from "./rollup.js";
 import { runInference } from "./inference.js";
 import { smolInferencer } from "./invoker.js";
+import { applyAtSessionStart } from "./apply.js";
+import { registerTasteCommand } from "./command.js";
 
 // A subagent's session file is <dir>/<AgentName>.jsonl and is never the first
 // session file the process opens; the main session is. Matching the leaf keeps
@@ -90,7 +92,7 @@ type Handler = (event: unknown, ctx: ExtensionContext) => Promise<void> | void;
 // it to disk and surface it in a diagnostic command.
 const HEALTH_CAP = 20;
 
-interface HealthEntry {
+export interface HealthEntry {
   timestamp: number;
   handler: string; // internal registration label, e.g. "on:tool_call" — never user content
   errorClass: string; // constructor name — structurally safe, never secret-bearing
@@ -101,7 +103,7 @@ interface HealthEntry {
   // added later must be pushed through `redact()` before it lands here.
 }
 
-interface HealthRecord {
+export interface HealthRecord {
   errors: number; // rolling count since last clear
   recent: HealthEntry[]; // most-recent last, capped at HEALTH_CAP
 }
@@ -180,13 +182,27 @@ export default function taste(pi: ExtensionAPI): void {
   // resets the ctx-local capture state so a fresh session starts clean. It
   // also seeds the in-memory rollup from disk on demand, so this session's
   // recurrence view starts from the merged state that any prior session left.
+  //
+  // It is then the lifecycle point at which last session's inferences take
+  // effect: the application path arms the implementer-class ones through the
+  // promoter. It runs inside the same safely() envelope as everything else,
+  // so an application fault is recorded and the session starts regardless,
+  // and it is awaited so the artefacts exist before the harness scans for
+  // them. Nothing decision-class is applied or mentioned here; those wait to
+  // be pulled by /taste review.
   pi.on("session_start", async (event, ctx) => {
     trackMainSession(ctx);
-    await safely("on:session_start", (_e, c) => {
+    await safely("on:session_start", async (_e, c) => {
       resetCaptureState(c);
       ensureLoaded();
+      await applyAtSessionStart(pi, c);
     })(event, ctx);
   });
+
+  // The one user-visible surface. It is registered whatever the config says,
+  // because a human must be able to read the panel — and to reverse what was
+  // already armed — in a scope where learning is currently switched off.
+  registerTasteCommand(pi, { health: tasteHealth, isSubagent: isSubagentSession, record: recordHealth });
 
   // Typed capture events — each wraps the capture handler through safely()
   // so the fail-open + subagent-suppression contract runs uniformly.
