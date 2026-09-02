@@ -28,6 +28,9 @@
   "exports": {
     ".": "./dist/taste.js"
   },
+  "omp": {
+    "extensions": ["dist/taste.js"]
+  },
   "files": [
     "dist/taste.js",
     "src",
