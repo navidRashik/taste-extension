@@ -1,14 +1,49 @@
 {
   "name": "taste-extension",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
+  "version": "0.1.0",
   "description": "Taste — a harness-layer preference learner for OMP: infers durable preferences from accept/reject/edit signals and auto-promotes implementer-class ones into managed skills, memory, guard rules, and approvals. Default-off, fail-open.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Navid Anjum Chowdhury",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/navidRashik/taste-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/navidRashik/taste-extension/issues"
+  },
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "pi-coding-agent",
+    "extension",
+    "preference-learning",
+    "agent",
+    "developer-tools"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/taste.js",
+  "exports": {
+    ".": "./dist/taste.js"
+  },
+  "files": [
+    "dist/taste.js",
+    "src",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "bundle": "esbuild src/index.ts --bundle --format=esm --platform=node --packages=external --outfile=dist/taste.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run bundle && npm run test"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",
