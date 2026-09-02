@@ -1,7 +1,7 @@
 {
   "name": "taste-extension",
   "version": "0.1.0",
-  "description": "Taste — a harness-layer preference learner for OMP: infers durable preferences from accept/reject/edit signals and auto-promotes implementer-class ones into managed skills, memory, guard rules, and approvals. Default-off, fail-open.",
+  "description": "Taste \u2014 a harness-layer preference learner for OMP: infers durable preferences from accept/reject/edit signals and auto-promotes implementer-class ones into managed skills, memory, guard rules, and approvals. Default-off, fail-open.",
   "type": "module",
   "license": "MIT",
   "author": "Navid Anjum Chowdhury",
@@ -29,7 +29,9 @@
     ".": "./dist/taste.js"
   },
   "omp": {
-    "extensions": ["dist/taste.js"]
+    "extensions": [
+      "src/index.ts"
+    ]
   },
   "files": [
     "dist/taste.js",
@@ -50,8 +52,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.7.0",
-    "esbuild": "^0.21.5",
-    "typescript": "^5.6.0",
+        "esbuild": "^0.21.5",
+        "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
 }
