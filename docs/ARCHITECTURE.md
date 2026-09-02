@@ -87,7 +87,7 @@ a structural property rather than a review item.
 
 ## Stage 1 — Capture: events to signals
 
-Eight events are registered. Only five of them ever bank a signal; the other three exist to maintain
+Eight events are registered. Only four of them ever bank a signal; the other four exist to maintain
 the state the banking depends on.
 
 ```mermaid
