@@ -10,9 +10,13 @@
 // A freshly promoted artefact is a brand-new untracked file, and git refuses
 // to commit a path it has never heard of, so the path is staged first. The
 // staging names exactly the one artefact path that has already been
-// validated as inside the taste-owned subtree — never a directory, never a
-// glob, never `-A` or `-a` — so it cannot pick up a file Taste did not
-// write. `--only` then commits that one pathspec's content and IGNORES THE
+// validated as inside the taste-owned subtree, and that path is proved to
+// be a single file before it is handed over: `git add` given a directory
+// stages everything beneath it, so "exactly one file" is checked rather
+// than trusted. No glob is ever passed, and none of the bulk-stage
+// arguments the argv guard below refuses can reach git either — so staging
+// cannot pick up a file Taste did not write. `--only` then commits that
+// one pathspec's content and IGNORES THE
 // REST OF THE INDEX, so whatever the human had already staged is never swept
 // into Taste's commit. The `--` separator ends the option list, so an
 // artefact path that begins with a dash is read as a path and never as a
@@ -40,7 +44,7 @@
 // the artefact is written and nothing is committed.
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import type { PreferenceCandidate, PromotionTarget } from "./schema.js";
 
@@ -49,11 +53,22 @@ export interface GitResult {
   stdout: string;
 }
 
+/** What lives at a path on disk, as far as staging is concerned. */
+export type PathKind = "file" | "directory" | "absent" | "other";
+
 export interface GitRunner {
   /** Run one git invocation in `cwd`. A spawn failure reports a non-zero status. */
   run(cwd: string, args: string[]): GitResult;
   /** Probe for an in-progress-operation marker inside the git directory. */
   exists(path: string): boolean;
+  /**
+   * Classify what lives at `path`. Staging needs this and not a bare
+   * existence answer, because `git add` reads a directory as "everything
+   * underneath", so the path it is handed has to be proved a single file
+   * first. A symlink is judged by what it points at, so a link into a
+   * directory is refused exactly as the directory itself is.
+   */
+  pathKind(path: string): PathKind;
 }
 
 /**
@@ -157,16 +172,38 @@ function git(runner: GitRunner, cwd: string, args: string[]): GitResult {
   return runner.run(cwd, args);
 }
 
+/** Whether a path is entering the index as content to publish, or as a deletion to record. */
+type StageMode = "publish" | "delete";
+
 /**
  * Stage exactly one path. Git cannot commit a pathspec it has never heard
  * of, so a brand-new artefact has to enter the index before it can be
  * published. The caller has already proved `target` lies inside the
- * taste-owned subtree, and exactly that one path is passed — no directory,
- * no glob, no `.` — so staging can never reach a file Taste did not write.
+ * taste-owned subtree — but that proof says nothing about what KIND of
+ * thing the path names, and a directory handed to `git add` stages every
+ * file beneath it. A writer that returned a directory would therefore
+ * publish the whole subtree while every existing check passed. So the kind
+ * is settled here, at the single point staging happens: a directory is
+ * refused outright, and a path being published must already be a regular
+ * file on disk. A deletion is the asymmetric case — the caller unlinks the
+ * artefact before the removal is committed, so the path being gone is the
+ * expected state there rather than a fault.
+ *
+ * The classification goes through the same injected seam as the git calls,
+ * so a test decides what the filesystem answers instead of having to build
+ * the shape it wants on a real disk.
+ *
  * The `--` separator ends the option list, so a path beginning with a dash
  * is read as a path rather than as a flag.
  */
-function stageOne(runner: GitRunner, cwd: string, target: string): void {
+function stageOne(runner: GitRunner, cwd: string, target: string, mode: StageMode): void {
+  const kind = runner.pathKind(target);
+  if (kind === "directory") {
+    throw new Error(`taste git: pathspec is a directory, and staging one publishes everything beneath it: ${target}`);
+  }
+  if (mode === "publish" && kind !== "file") {
+    throw new Error(`taste git: pathspec to publish is not a regular file (${kind}): ${target}`);
+  }
   const res = git(runner, cwd, ["add", "--", target]);
   if (res.status !== 0) {
     throw new Error(`taste git: staging refused with status ${res.status}`);
@@ -184,6 +221,18 @@ export const defaultGitRunner: GitRunner = {
     }
   },
   exists: (path) => existsSync(path),
+  pathKind(path) {
+    try {
+      const st = statSync(path);
+      if (st.isDirectory()) return "directory";
+      return st.isFile() ? "file" : "other";
+    } catch {
+      // Nothing is there, or nothing that can be inspected at all. Either
+      // way it is not a file Taste may publish; a removal treats it as the
+      // already-deleted artefact it normally is.
+      return "absent";
+    }
+  },
 };
 
 /**
@@ -285,7 +334,7 @@ export function commitArtefact(
   // Every refusal is settled before the index is touched, so a rejected
   // promotion leaves nothing staged behind it.
   const message = commitMessageFor(candidate);
-  stageOne(runner, cwd, target);
+  stageOne(runner, cwd, target, "publish");
   const args = ["commit", "--only", "-m", message, "--", target];
   const res = git(runner, cwd, args);
   if (res.status !== 0) {
@@ -323,7 +372,7 @@ export function commitRemoval(
   if (ATTRIBUTION_RX.test(message)) {
     throw new Error("taste git: commit message carries an attribution token");
   }
-  stageOne(runner, cwd, target);
+  stageOne(runner, cwd, target, "delete");
   const args = ["commit", "--only", "-m", message, "--", target];
   const res = git(runner, cwd, args);
   if (res.status !== 0) {

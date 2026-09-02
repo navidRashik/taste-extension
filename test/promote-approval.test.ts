@@ -13,7 +13,7 @@ import {
 } from "../src/allowlist.js";
 import { irreversibleFamily } from "../src/denylist.js";
 import { defaultApprovalWriter, mergeApprovalRule, isCommandApprovalRule } from "../src/approval.js";
-import { commitMessageFor, type GitRunner } from "../src/gitcommit.js";
+import { commitMessageFor, defaultGitRunner, type GitRunner } from "../src/gitcommit.js";
 import { defaultSkillWriter, type MemoryWriter, type SkillWriter } from "../src/writers.js";
 import type { PreferenceCandidate } from "../src/schema.js";
 
@@ -106,6 +106,9 @@ function fakeGit(state: RepoState): FakeGit {
       for (const marker of state.markers ?? []) if (path === join(gitDir, marker)) return true;
       return false;
     },
+    // The promotion writes a real artefact into a real temp directory
+    // before it is staged, so the type probe answers about that file.
+    pathKind: (path) => defaultGitRunner.pathKind(path),
     run(_cwd, args) {
       calls.push(args);
       if (args[0] === "rev-parse" && args[1] === "--absolute-git-dir") return { status: 0, stdout: `${gitDir}\n` };
@@ -122,7 +125,12 @@ function fakeGit(state: RepoState): FakeGit {
 /** A seam for a directory that is not a repository at all. */
 function noRepoGit(): FakeGit {
   const calls: string[][] = [];
-  return { calls, exists: () => false, run: (_c, args) => { calls.push(args); return { status: 1, stdout: "" }; } };
+  return {
+    calls,
+    exists: () => false,
+    pathKind: () => "absent",
+    run: (_c, args) => { calls.push(args); return { status: 1, stdout: "" }; },
+  };
 }
 
 describe("allowlist: only explicitly non-mutating command families may become a learned auto-approval", () => {

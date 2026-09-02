@@ -201,6 +201,32 @@ describe.skipIf(!HAS_GIT)(SUITE, () => {
     expect(sh(repo, ["status", "--porcelain", "--", plan.tasteRoot]).trim()).toBe("");
   });
 
+  it("REFUSES a directory pathspec, and real git is left with its contents untracked", () => {
+    // The control for the whole type check, against the binary rather than
+    // against a fake: `git add` on a directory stages EVERYTHING under it,
+    // so if the refusal is ever removed this repository ends up publishing
+    // files Taste never wrote. Both files below sit inside the taste
+    // subtree, so the subtree check passes the directory happily — the type
+    // check is the only thing standing between them and the index.
+    const artefact = writeArtefact(repo);
+    const dir = dirname(artefact);
+    const bystander = join(dir, "NOTES.md");
+    writeFileSync(bystander, "someone else's file\n");
+
+    expect(() => commitArtefact(plan, repo, dir, candidate(), defaultGitRunner)).toThrow(
+      /pathspec is a directory/,
+    );
+
+    // Nothing reached the index. Real git still calls both paths untracked,
+    // and HEAD is the seed commit it was before.
+    expect(lines(sh(repo, ["diff", "--cached", "--name-only"]))).toEqual([]);
+    expect(lines(sh(repo, ["ls-files"]))).toEqual(["README.md"]);
+    const untracked = sh(repo, ["status", "--porcelain", "--untracked-files=all"]);
+    expect(untracked).toContain(`?? ${ARTEFACT_REL}`);
+    expect(untracked).toContain("?? .omp/skills/taste-pc_real01/NOTES.md");
+    expect(filesIn(repo, "HEAD")).toEqual(["README.md"]);
+  });
+
   it("still refuses every widening, irreversible or verification-skipping argument", () => {
     // Each key the module itself declares forbidden, driven through the same
     // guard every argv in the module passes through.
@@ -231,6 +257,7 @@ describe.skipIf(!HAS_GIT)(SUITE, () => {
     const watched: GitRunner = {
       run: (cwd, args) => { seen.push(args); return defaultGitRunner.run(cwd, args); },
       exists: (path) => defaultGitRunner.exists(path),
+      pathKind: (path) => defaultGitRunner.pathKind(path),
     };
     const artefact = writeArtefact(repo);
     commitArtefact(plan, repo, artefact, candidate(), watched);

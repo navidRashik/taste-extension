@@ -7,7 +7,7 @@ import { __setTasteStateDir, rollupTouch, tasteStateDir } from "../src/rollup.js
 import { readPromotionLedger } from "../src/promote.js";
 import { TOMBSTONE_PREFIX, ledgerView } from "../src/apply.js";
 import { forgetPromotion, forgetPromotions, removeApprovalRule } from "../src/forget.js";
-import { commitRemoval, type CommitPlan, type GitRunner } from "../src/gitcommit.js";
+import { commitRemoval, defaultGitRunner, type CommitPlan, type GitRunner } from "../src/gitcommit.js";
 import type { PreferenceCandidate, PromotionLedgerEntry } from "../src/schema.js";
 
 let stateDir: string;
@@ -67,12 +67,19 @@ function recordingGit(over: Partial<{ statusOut: string; commitStatus: number }>
       return { status: 0, stdout: "" };
     },
     exists: (path) => path === join(cwd, ".git") || existsSync(path),
+    // The removal path stages a real temp-dir path, so the seam answers
+    // about the real filesystem: the artefact is genuinely gone by then.
+    pathKind: (path) => defaultGitRunner.pathKind(path),
   };
   return { git, argvs };
 }
 
 /** A git runner for a directory that is not a repository at all. */
-const NO_REPO_GIT: GitRunner = { run: () => ({ status: 1, stdout: "" }), exists: () => false };
+const NO_REPO_GIT: GitRunner = {
+  run: () => ({ status: 1, stdout: "" }),
+  exists: () => false,
+  pathKind: () => "absent",
+};
 
 beforeEach(() => {
   stateDir = mkdtempSync(join(tmpdir(), "taste-forget-state-"));
