@@ -67,8 +67,13 @@ function candidate(over: Partial<PreferenceCandidate> = {}): PreferenceCandidate
 function unusedSkillWriter(): SkillWriter { return { write: () => { throw new Error("skill writer must not be called"); } }; }
 function unusedMemoryWriter(): MemoryWriter { return { write: async () => { throw new Error("memory writer must not be called"); } }; }
 
-/** Arguments that must never reach git on any code path. */
-const NEVER_ARGS = ["-A", "--all", "-a", "-f", "--force", "--amend", "add", "push", "stage"];
+/**
+ * Arguments that must never reach git on any code path. Staging itself is
+ * how a brand-new artefact becomes committable, so the verb is legitimate;
+ * what must never appear is a flag that widens the write past the single
+ * pathspec, rewrites history, or publishes.
+ */
+const NEVER_ARGS = ["-A", "--all", "-a", "-f", "--force", "--amend", "push"];
 
 interface RepoState {
   root: string;
@@ -78,6 +83,7 @@ interface RepoState {
   dirty?: string;
   statusFails?: boolean;
   commitStatus?: number;
+  addStatus?: number;
 }
 
 interface FakeGit extends GitRunner {
@@ -106,6 +112,7 @@ function fakeGit(state: RepoState): FakeGit {
       if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") return { status: 0, stdout: `${state.branch ?? "main"}\n` };
       if (args[0] === "check-ignore") return { status: state.ignored ? 0 : 1, stdout: "" };
       if (args[0] === "status") return state.statusFails ? { status: 128, stdout: "" } : { status: 0, stdout: state.dirty ?? "" };
+      if (args[0] === "add") return { status: state.addStatus ?? 0, stdout: "" };
       if (args[0] === "commit") return { status: state.commitStatus ?? 0, stdout: "" };
       return { status: 1, stdout: "" };
     },
@@ -306,8 +313,8 @@ describe("promote: approval target end-to-end", () => {
   });
 });
 
-describe("auto-commit: the git write is exactly one narrow pathspec commit", () => {
-  it("commits the promoted artefact with `commit --only <path> -m <msg>` and nothing else", async () => {
+describe("auto-commit: the git write is one staged path and one narrow pathspec commit", () => {
+  it("stages exactly the artefact, then commits it with `commit --only -m <msg> -- <path>` and nothing else", async () => {
     seed("bash:pnpm add *", "sig_g1");
     const git = fakeGit({ root: cwd });
     const result = await promote(
@@ -316,18 +323,17 @@ describe("auto-commit: the git write is exactly one narrow pathspec commit", () 
       { skillWriter: defaultSkillWriter, memoryWriter: unusedMemoryWriter(), git },
     );
     expect(result.outcome).toBe("promoted");
-    const commits = git.calls.filter((a) => a[0] === "commit");
-    expect(commits).toHaveLength(1);
-    expect(commits[0]).toEqual([
-      "commit",
-      "--only",
-      join(cwd, ".omp", "skills", "taste-pc_skill01", "SKILL.md"),
-      "-m",
-      "taste: promote skill preference pc_skill01 (project scope)",
+    const writes = git.calls.filter((a) => a[0] === "add" || a[0] === "commit");
+    const artefact = join(cwd, ".omp", "skills", "taste-pc_skill01", "SKILL.md");
+    // The publication is exactly two invocations: the one artefact path into
+    // the index, then a commit bounded to that same path.
+    expect(writes).toEqual([
+      ["add", "--", artefact],
+      ["commit", "--only", "-m", "taste: promote skill preference pc_skill01 (project scope)", "--", artefact],
     ]);
   });
 
-  it("never hands git a staging, force, amend or push argument on ANY probe or write", async () => {
+  it("never hands git a widening, force, amend or push argument on ANY probe or write", async () => {
     seed("bash:pnpm add *", "sig_g2");
     const git = fakeGit({ root: cwd });
     const result = await promote(
@@ -339,6 +345,11 @@ describe("auto-commit: the git write is exactly one narrow pathspec commit", () 
     // scan below would pass simply because nothing was ever handed to git.
     expect(result.outcome).toBe("promoted");
     expect(git.calls.filter((a) => a[0] === "commit")).toHaveLength(1);
+    // Staging is permitted, but only ever as one explicit pathspec.
+    for (const argv of git.calls.filter((a) => a[0] === "add")) {
+      expect(argv).toHaveLength(3);
+      expect(argv[1]).toBe("--");
+    }
     for (const argv of git.calls) {
       for (const forbidden of NEVER_ARGS) expect(argv).not.toContain(forbidden);
       expect(argv.some((a) => a.startsWith("--no-"))).toBe(false);
@@ -352,10 +363,10 @@ describe("auto-commit: the git write is exactly one narrow pathspec commit", () 
       skillWriter: unusedSkillWriter(), memoryWriter: unusedMemoryWriter(), git,
     });
     expect(result.outcome).toBe("promoted");
-    const commits = git.calls.filter((a) => a[0] === "commit");
-    expect(commits[0]).toEqual([
-      "commit", "--only", join(cwd, ".omp", "config.yml"), "-m",
-      "taste: promote approval preference pc_ap0001 (project scope)",
+    const config = join(cwd, ".omp", "config.yml");
+    expect(git.calls.filter((a) => a[0] === "add" || a[0] === "commit")).toEqual([
+      ["add", "--", config],
+      ["commit", "--only", "-m", "taste: promote approval preference pc_ap0001 (project scope)", "--", config],
     ]);
   });
 
@@ -466,6 +477,15 @@ describe("auto-commit: unsafe repository states refuse the promotion and leave t
     expect(reason).toMatch(/commit refused with status 1/);
   });
 
+  it("quarantines when git refuses to stage the artefact", async () => {
+    const { outcome, reason, git } = await promoteInto({ root: cwd, addStatus: 1 });
+    expect(outcome).toBe("quarantined");
+    expect(reason).toMatch(/staging refused with status 1/);
+    // A failed staging must stop the publication, not fall through to a
+    // commit that would then name a path git has never heard of.
+    expect(git.calls.filter((a) => a[0] === "commit")).toHaveLength(0);
+  });
+
   it("refuses a pathspec that escapes the taste-owned subtree", async () => {
     seed("bash:pnpm add *", "sig_e1");
     const git = fakeGit({ root: cwd });
@@ -477,6 +497,7 @@ describe("auto-commit: unsafe repository states refuse the promotion and leave t
     );
     expect(result.outcome).toBe("quarantined");
     expect(result.reason).toMatch(/pathspec escapes the taste subtree/);
-    expect(git.calls.filter((a) => a[0] === "commit")).toHaveLength(0);
+    // Nothing outside the taste subtree may even reach the index.
+    expect(git.calls.filter((a) => a[0] === "add" || a[0] === "commit")).toEqual([]);
   });
 });

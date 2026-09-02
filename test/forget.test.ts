@@ -7,7 +7,7 @@ import { __setTasteStateDir, rollupTouch, tasteStateDir } from "../src/rollup.js
 import { readPromotionLedger } from "../src/promote.js";
 import { TOMBSTONE_PREFIX, ledgerView } from "../src/apply.js";
 import { forgetPromotion, forgetPromotions, removeApprovalRule } from "../src/forget.js";
-import type { GitRunner } from "../src/gitcommit.js";
+import { commitRemoval, type CommitPlan, type GitRunner } from "../src/gitcommit.js";
 import type { PreferenceCandidate, PromotionLedgerEntry } from "../src/schema.js";
 
 let stateDir: string;
@@ -241,14 +241,18 @@ describe("forget: an approval is reversed by lifting out exactly its own lines",
 });
 
 describe("forget: the removal is published exactly as narrowly as the promotion", () => {
-  it("commits the deletion with the one narrow argv and nothing else", () => {
+  it("stages the deletion and commits it with the one narrow argv and nothing else", () => {
     const file = put(entry().path, "# managed skill\n");
     const { git, argvs } = recordingGit();
     const outcome = forgetPromotion(entry(), fakeCtx(), { git });
     expect(outcome.removed).toBe(true);
     expect(outcome.committed).toBe(true);
-    const commits = argvs.filter((a) => a[0] === "commit");
-    expect(commits).toEqual([["commit", "--only", resolve(file), "-m", "taste: forget promotion pl_1"]]);
+    // The deletion enters the index first, exactly as a promotion's new file
+    // does, so publishing a forget and publishing a promotion are one shape.
+    expect(argvs.filter((a) => a[0] === "add" || a[0] === "commit")).toEqual([
+      ["add", "--", resolve(file)],
+      ["commit", "--only", "-m", "taste: forget promotion pl_1", "--", resolve(file)],
+    ]);
   });
 
   it("never runs git for a user-scope reversal", () => {
@@ -271,7 +275,7 @@ describe("forget: the removal is published exactly as narrowly as the promotion"
     expect(outcome.removed).toBe(true);
     expect(outcome.committed).toBe(false);
     expect(outcome.reason).toContain("not published");
-    expect(argvs.filter((a) => a[0] === "commit")).toEqual([]);
+    expect(argvs.filter((a) => a[0] === "add" || a[0] === "commit")).toEqual([]);
   });
 
   it("reports an unpublished removal when the commit itself is refused", () => {
@@ -289,6 +293,22 @@ describe("forget: the removal is published exactly as narrowly as the promotion"
     put(path, "{}\n");
     const { git, argvs } = recordingGit();
     forgetPromotion(entry({ target: "memory", path }), fakeCtx(), { git });
+    expect(argvs).toEqual([]);
+  });
+
+  it("refuses a removal pathspec that escapes the taste-owned subtree", () => {
+    // The removal writer re-validates the path at the point it is handed to
+    // git, exactly as the promotion writer does. A caller that names a file
+    // outside the subtree must be refused before anything is staged — a
+    // deletion committed on a stranger's file is the worst thing this module
+    // could do, so the guard is asserted here directly rather than being
+    // trusted to the caller that happens to exist today.
+    const { git, argvs } = recordingGit();
+    const plan: CommitPlan = { repoRoot: cwd, tasteRoot: join(cwd, ".omp") };
+    const outside = join(cwd, "src", "not-taste.md");
+    expect(() => commitRemoval(plan, cwd, outside, "pl_1", git)).toThrow(
+      /pathspec escapes the taste subtree/,
+    );
     expect(argvs).toEqual([]);
   });
 });
