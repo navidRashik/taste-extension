@@ -7,10 +7,12 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc",
+    "bundle": "esbuild src/index.ts --bundle --format=esm --platform=node --packages=external --outfile=dist/taste.js",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",
+    "esbuild": "^0.21.5",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
