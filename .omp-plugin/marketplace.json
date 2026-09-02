@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "taste-extension",
+  "owner": {
+    "name": "Navid Anjum Chowdhury"
+  },
+  "metadata": {
+    "description": "Taste - a harness-layer preference learner for the OMP coding agent.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "taste",
+      "description": "A preference learner for OMP: infers durable preferences from accept/reject/edit signals and auto-promotes implementer-class ones into managed skills, memory, guard rules, and approvals. Default-off, fail-open.",
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/navidRashik/taste-extension",
+      "repository": "https://github.com/navidRashik/taste-extension.git",
+      "license": "MIT",
+      "keywords": ["omp", "oh-my-pi", "pi-coding-agent", "preference-learning", "developer-tools"]
+    }
+  ]
+}
