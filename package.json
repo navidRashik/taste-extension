@@ -42,7 +42,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "node init && tsc",
+    "build": "tsc",
     "bundle": "esbuild src/index.ts --bundle --format=esm --platform=node --packages=external --outfile=dist/taste.js",
     "test": "vitest run",
     "prepublishOnly": "npm run bundle && npm run test"
